@@ -52,7 +52,7 @@ async fn handle_connection(stream: TcpStream, db: Db) {
     loop {
         let value = handler.read().await.unwrap_or_else(|e| {
             eprintln!("Failed to read token: {e}");
-            Some(Value::Array(vec![Value::BulkString("ECHO".to_string()), Value::BulkString(format!("Failed to read token: {e}"))]))
+            Some(Value::Array(vec![Value::BulkString("ECHO".to_string()), Value::BulkString(format!("(error): Failed to read token: {e}"))]))
         });
 
         println!("Got Value: {value:?}");
@@ -61,7 +61,7 @@ async fn handle_connection(stream: TcpStream, db: Db) {
             let (command, args) = extract_command(v)
                 .unwrap_or_else(|e| {
                     eprintln!("Error extracting commands: {e}");
-                    ("ECHO".to_string(), vec![Value::BulkString(format!("Error extracting commands: {e}"))])
+                    ("ECHO".to_string(), vec![Value::BulkString(format!("(error): Error extracting commands: {e}"))])
                 });
             match command.to_lowercase().as_str() {
                 "ping" => Value::SimpleString("PONG".to_string()),
@@ -69,11 +69,12 @@ async fn handle_connection(stream: TcpStream, db: Db) {
                     .unwrap_or(&Value::BulkString("You did not provide an argument to ECHO back".to_string()))
                     .clone(),
                 "set" => {
-                    if args.len() == 2 {
+                    let ret = if args.len() == 2 {
                         if let (Value::BulkString(key), value) = (&args[0], &args[1]) {
                             let mut db_temp = db.write().await;
                             db_temp.insert(key.to_string(), DBData::new(determine_type(value).unwrap(), Instant::now(), None));
                         }
+                        Value::SimpleString("OK".to_string())
                     } else if args.len() == 4 {
                         if let (
                             Value::BulkString(key),
@@ -98,40 +99,47 @@ async fn handle_connection(stream: TcpStream, db: Db) {
                                 )
                             );
                         }
-                    }
-
-                    Value::SimpleString("OK".to_string())
-                },
-                "get" => {
-                    let ret: Value = if let Some(Value::BulkString(key)) = args.get(0) {
-                        let mut db = db.write().await;
-
-                        match db.get(key) {
-                            None => Value::BulkString("-1".to_string()),
-                            Some(val) => {
-                                let expired = val
-                                    .exp()
-                                    .map(|ms| val.created_at().elapsed() >= Duration::from_millis(ms))
-                                    .unwrap_or(false);
-
-                                if expired {
-                                    db.remove(key);
-                                    Value::BulkString("-1".to_string())
-                                } else {
-                                    match val.data() {
-                                        DBVal::Int(n) => Value::BulkString(n.to_string()),
-                                        DBVal::String(s) => Value::BulkString(s.clone()),
-                                    }
-                                }
-                            }
-                        }
+                        Value::SimpleString("OK".to_string())
                     } else {
-                        Value::BulkString("-1".to_string())
+                        Value::BulkString("(error): Invalid arguments for: SET".to_string())
                     };
 
                     ret
                 },
-                c => Value::BulkString(format!("Invalid command: {}", c)),
+                "get" => {
+                    if args.len() != 1 {
+                        Value::BulkString("(error): Invalid arguments for GET".to_string())
+                    } else {
+                        let ret: Value = if let Some(Value::BulkString(key)) = args.get(0) {
+                            let mut db = db.write().await;
+
+                            match db.get(key) {
+                                None => Value::BulkString("-1".to_string()),
+                                Some(val) => {
+                                    let expired = val
+                                        .exp()
+                                        .map(|ms| val.created_at().elapsed() >= Duration::from_millis(ms))
+                                        .unwrap_or(false);
+
+                                    if expired {
+                                        db.remove(key);
+                                        Value::BulkString("-1".to_string())
+                                    } else {
+                                        match val.data() {
+                                            DBVal::Int(n) => Value::BulkString(n.to_string()),
+                                            DBVal::String(s) => Value::BulkString(s.clone()),
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            Value::BulkString("-1".to_string())
+                        };
+
+                        ret
+                    }
+                },
+                c => Value::BulkString(format!("(error): Invalid command: {}", c)),
             }
         } else {
             break;
