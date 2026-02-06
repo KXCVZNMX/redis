@@ -19,7 +19,9 @@ pub struct DBData {
 impl DBData {
     pub fn new(data: DBVal, created_at: Instant, exp: Option<u64>) -> Self {
         Self {
-            data, created_at, exp
+            data,
+            created_at,
+            exp,
         }
     }
 

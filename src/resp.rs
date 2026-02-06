@@ -36,7 +36,7 @@ impl RespHandler {
         let bytes_len = self.stream.read_buf(&mut self.buf).await?;
 
         if bytes_len == 0 {
-            return Ok(None)
+            return Ok(None);
         }
 
         let (v, _) = parse_message(self.buf.split())?;
@@ -64,7 +64,7 @@ fn parse_simple_string(buf: BytesMut) -> anyhow::Result<(Value, usize)> {
     if let Some((line, len)) = read_until_crlf(&buf) {
         let string = String::from_utf8(line.to_vec())?;
 
-        return Ok((Value::SimpleString(string), len))
+        return Ok((Value::SimpleString(string), len));
     }
 
     Err(anyhow::anyhow!("Invalid string: {:?}", buf))
@@ -82,7 +82,12 @@ fn parse_bulk_string(buf: BytesMut) -> anyhow::Result<(Value, usize)> {
     let end_of_bulk_str = bytes_consumed + bulk_str_len as usize;
     let total_parsed = end_of_bulk_str + 2;
 
-    Ok((Value::BulkString(String::from_utf8(buf[bytes_consumed..end_of_bulk_str].to_vec())?), total_parsed))
+    Ok((
+        Value::BulkString(String::from_utf8(
+            buf[bytes_consumed..end_of_bulk_str].to_vec(),
+        )?),
+        total_parsed,
+    ))
 }
 
 fn parse_array(buf: BytesMut) -> anyhow::Result<(Value, usize)> {
