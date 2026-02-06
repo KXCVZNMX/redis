@@ -49,7 +49,25 @@ async fn handle_connection(stream: TcpStream, db: Db) {
 
     println!("Starting Loop");
 
+    let mut i: usize = 0;
+
+    const CLEAR_TOKEN_ITERATIONS: usize = 1000;
+
     loop {
+        i += 1;
+
+        if i >= CLEAR_TOKEN_ITERATIONS {
+            let is_expired = |val: &DBData|
+                val.exp()
+                    .map(|ms| val.created_at().elapsed() >= Duration::from_millis(ms))
+                    .unwrap_or(false);
+
+            let mut db_temp = db.write().await;
+            db_temp.retain(|_, val| !is_expired(val));
+
+            i = 0;
+        }
+
         let value = handler.read().await.unwrap_or_else(|e| {
             eprintln!("Failed to read token: {e}");
             Some(Value::Array(vec![Value::BulkString("ECHO".to_string()), Value::BulkString(format!("(error): Failed to read token: {e}"))]))
